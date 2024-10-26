@@ -1,4 +1,4 @@
-#!/bin/bash --noprofile --norc -e -o pipefail
+#!/bin/bash --noprofile --norc -e -x -o pipefail
 
 if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
     set -x

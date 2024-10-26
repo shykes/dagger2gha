@@ -1,0 +1,23 @@
+name: Upload Artifact
+
+on:
+  push: {}
+  workflow_dispatch: {}
+
+jobs:
+  upload-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Create a sample file
+        run: echo "Hello, World!" > sample.txt
+
+      - name: Upload Artifact using Shell Script
+        run: |
+          ./scripts/upload.sh sample.txt my-artifact
+        env:
+          ACTIONS_RUNTIME_URL: ${{ env.ACTIONS_RUNTIME_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
