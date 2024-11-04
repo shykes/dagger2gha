@@ -55,6 +55,10 @@ func New(
 	// Default timeout for CI jobs, in minutes
 	// +optional
 	timeoutMinutes int,
+	// Define if the dagger engine should be installed
+	// +optional
+	// +default=true
+	InstallEngine bool,
 ) *Gha {
 	if runner == nil {
 		runner = []string{"ubuntu-latest"}
@@ -70,6 +74,7 @@ func New(
 		FileExtension:  fileExtension,
 		Repository:     repository,
 		TimeoutMinutes: timeoutMinutes,
+		InstallEngine:  InstallEngine,
 	}}
 }
 
@@ -93,6 +98,7 @@ type Settings struct {
 	Repository             *dagger.Directory
 	TimeoutMinutes         int
 	Permissions            Permissions
+	InstallEngine          bool
 }
 
 // Validate a Github Actions configuration (best effort)
@@ -504,13 +510,28 @@ func (p *Pipeline) OnSchedule(
 }
 
 // Lookup a pipeline
-func (m *Gha) pipeline(name string) *Pipeline {
+func (m *Gha) Pipeline(name string) *Pipeline {
 	for _, p := range m.Pipelines {
 		if p.Name == name {
 			return p
 		}
 	}
 	return nil
+}
+
+// Allow to update an existing pipeline
+func (m *Gha) WithExistingPipeline(name string, pipeline *Pipeline) *Gha {
+	for i, p := range m.Pipelines {
+		if p.Name == name {
+			m.Pipelines[i] = pipeline
+			return m
+		}
+	}
+
+	// Add the pipeline if it's not in the list
+	m.Pipelines = append(m.Pipelines, pipeline)
+
+	return m
 }
 
 // A Dagger pipeline to be called from a Github Actions configuration
@@ -531,10 +552,37 @@ type Pipeline struct {
 	Settings Settings
 	// +private
 	Triggers WorkflowTriggers
+	// +private
+	Strategy Strategy
 }
 
 func (p *Pipeline) Config() *dagger.Directory {
 	return p.asWorkflow().Config(p.workflowFilename(), p.Settings.AsJson)
+}
+
+// Allow to define a matrix for the pipeline
+func (p *Pipeline) WithStrategyMatrix(name string, values []string) *Pipeline {
+	if p.Strategy.Matrix == nil {
+		p.Strategy.Matrix = map[string][]string{}
+	}
+
+	p.Strategy.Matrix[name] = values
+
+	return p
+}
+
+// Define the number of job which can run in parallel
+func (p *Pipeline) WithStrategyMaxParallel(value int) *Pipeline {
+	p.Strategy.MaxParallel = value
+
+	return p
+}
+
+// Enable the fail fast trategy in the pipeline
+func (p *Pipeline) WithStrategyFailFast(enabled bool) *Pipeline {
+	p.Strategy.FailFast = enabled
+
+	return p
 }
 
 func (p *Pipeline) concurrency() *WorkflowConcurrency {
@@ -609,7 +657,9 @@ func (p *Pipeline) asWorkflow() Workflow {
 	var steps []JobStep
 	// FIXME: make checkout configurable
 	steps = append(steps, p.checkoutStep())
-	steps = append(steps, p.installDaggerSteps()...)
+	if p.Settings.InstallEngine {
+		steps = append(steps, p.installDaggerSteps()...)
+	}
 	steps = append(steps, p.warmEngineStep(), p.callDaggerStep())
 	if p.Settings.StopEngine {
 		steps = append(steps, p.stopEngineStep())
@@ -626,6 +676,7 @@ func (p *Pipeline) asWorkflow() Workflow {
 				Permissions:    p.JobPermissions(),
 				Steps:          steps,
 				TimeoutMinutes: p.Settings.TimeoutMinutes,
+				Strategy:       &p.Strategy,
 				Outputs: map[string]string{
 					"stdout": "${{ steps.exec.outputs.stdout }}",
 					"stderr": "${{ steps.exec.outputs.stderr }}",

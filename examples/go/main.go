@@ -90,3 +90,35 @@ func (m *Examples) Gha_OnPullRequest() *dagger.Directory {
 		).
 		Config()
 }
+
+// Call integration tests on pull requests
+func (m *Examples) Gha_WithStrategy() *dagger.Directory {
+	pipelineName := "Pipeline with strategy"
+	return dag.
+		Gha().
+		WithExistingPipeline(
+			pipelineName,
+			dag.
+				Gha().
+				WithPipeline(
+					pipelineName,
+					"test --all --source=. --version=${{ matrix.version }} --type=${{ matrix.type }}",
+					dagger.GhaWithPipelineOpts{
+						OnPullRequestOpened:      true,
+						OnPullRequestSynchronize: true,
+					},
+				).
+				Pipeline(pipelineName).
+				WithStrategyMaxParallel(10).
+				WithStrategyFailFast(true).
+				WithStrategyMatrix(
+					"version",
+					[]string{"10", "11", "12"},
+				).
+				WithStrategyMatrix(
+					"type",
+					[]string{"bar", "qux"},
+				),
+		).
+		Config()
+}
